@@ -1,0 +1,222 @@
+---
+title: 'Лабораторна робота №5. Випадок з двома вибірками. Побудова регресійних моделей '
+author: "Шулещенко Артем Вадимович"
+output:
+  html_document:
+    toc: true
+    df_print: paged
+  html_notebook:
+    toc: true
+    toc_float: true
+    highlight: tango
+---
+
+
+## Мета роботи
+
+Побудувати модель **парної регресії** між змінними \(X\) та \(Y\) за даними з Excel-файлу **Варианты1-17.xls**, оцінити параметри моделі, перевірити її адекватність і виконати аналіз залишків.
+
+## Вибір змінних для варіанту 12
+
+Для **варіанту 12** використовуються колонки:
+
+- \(X\) = **Col_13**
+- \(Y\) = **Col_38**
+
+(якщо в Excel інші назви, нижче вони автоматично перейменуються в `Col_1..Col_k` за позиціями)
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Пакети
+
+Для імпорту даних використовуємо **readxl**.
+
+```{r packages}
+pkgs <- c("readxl", "dplyr", "ggplot2", "broom", "lmtest", "tibble")
+
+to_install <- pkgs[!pkgs %in% rownames(installed.packages())]
+if (length(to_install) > 0) install.packages(to_install)
+
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(broom)
+library(lmtest)
+library(tibble)
+```
+
+## Імпорт даних з Excel
+
+```{r import}
+file_path <- "Варианты1-17.xls"
+stopifnot(file.exists(file_path))
+
+raw_data <- read_excel(file_path, sheet = 1)
+
+dim(raw_data)
+names(raw_data)
+head(raw_data, 3)
+```
+
+## Формування даних X та Y (варіант 12)
+
+Щоб уникнути конфліктів імен, використовуємо назву **df_data**.
+
+```{r build-data}
+if (!all(grepl("^Col_\\d+$", names(raw_data)))) {
+  names(raw_data) <- paste0("Col_", seq_along(raw_data))
+}
+
+x_col <- "Col_13"
+y_col <- "Col_38"
+
+df_data <- raw_data %>%
+  transmute(
+    X = as.numeric(.data[[x_col]]),
+    Y = as.numeric(.data[[y_col]])
+  ) %>%
+  filter(!is.na(X), !is.na(Y))
+
+stopifnot(is.data.frame(df_data))
+stopifnot(all(c("X","Y") %in% names(df_data)))
+
+summary(df_data)
+```
+
+## Описові статистики та кореляція
+
+```{r exploratory}
+desc <- df_data %>%
+  summarise(
+    n = n(),
+    mean_X = mean(X), sd_X = sd(X),
+    mean_Y = mean(Y), sd_Y = sd(Y),
+    cor_XY = cor(X, Y)
+  )
+
+desc
+```
+
+## Діаграма розсіювання
+
+```{r scatter}
+ggplot(df_data, aes(x = X, y = Y)) +
+  geom_point() +
+  labs(
+    title = "Діаграма розсіювання (варіант 12)",
+    x = "X (Col_13)",
+    y = "Y (Col_38)"
+  ) +
+  theme_minimal()
+```
+
+## Побудова регресійних моделей
+
+```{r fit-models}
+m1 <- lm(Y ~ X, data = df_data)
+m2 <- lm(Y ~ poly(X, 2, raw = TRUE), data = df_data)
+
+summary(m1)
+summary(m2)
+```
+
+### Порівняння моделей (AIC та Adjusted R²)
+
+```{r compare-models}
+cmp <- bind_rows(
+  glance(m1) %>% mutate(model = "Лінійна: Y ~ X"),
+  glance(m2) %>% mutate(model = "Квадратична: Y ~ X + X^2")
+) %>%
+  select(model, r.squared, adj.r.squared, AIC, BIC, sigma, p.value)
+
+cmp
+```
+
+### Вибір найкращої моделі
+
+```{r choose-best}
+best_name <- cmp$model[which.min(cmp$AIC)]
+best_model <- if (best_name == "Лінійна: Y ~ X") m1 else m2
+
+best_name
+summary(best_model)
+```
+
+## Візуалізація регресії (виправлено без inline-if у formula)
+
+> Помилка `unexpected token 'y'` часто виникає через некоректне копіювання або через те, що в `aes()` поставили `-` замість `=`.
+> Нижче — найбільш надійний варіант: окремі гілки `if/else`, і в `aes()` **обов'язково `x = X`, `y = Y`**.
+
+```{r plot-fit}
+p <- ggplot(df_data, aes(x = X, y = Y)) +
+  geom_point()
+
+if (best_name == "Лінійна: Y ~ X") {
+  p <- p + geom_smooth(method = "lm", formula = y ~ x, se = TRUE)
+} else {
+  p <- p + geom_smooth(method = "lm", formula = y ~ poly(x, 2, raw = TRUE), se = TRUE)
+}
+
+p +
+  labs(
+    title = paste0("Найкраща модель: ", best_name),
+    x = "X",
+    y = "Y"
+  ) +
+  theme_minimal()
+```
+
+## Діагностика моделі (аналіз залишків)
+
+```{r residual-plots}
+par(mfrow = c(2, 2))
+plot(best_model)
+par(mfrow = c(1, 1))
+```
+
+### Тести для залишків
+
+```{r tests}
+res <- residuals(best_model)
+
+sh <- shapiro.test(res)
+bp <- bptest(best_model)
+
+sh
+bp
+```
+
+## Рівняння регресії
+
+```{r equation}
+coef_best <- coef(best_model)
+
+eq <- if (best_name == "Лінійна: Y ~ X") {
+  paste0("Y = ", round(coef_best[1], 4), " + ", round(coef_best[2], 4), "·X")
+} else {
+  paste0("Y = ", round(coef_best[1], 4), " + ", round(coef_best[2], 4), "·X + ", round(coef_best[3], 4), "·X^2")
+}
+
+eq
+```
+
+## Приклад прогнозування
+
+```{r predict}
+newdata <- data.frame(X = seq(min(df_data$X), max(df_data$X), length.out = 5))
+pred <- predict(best_model, newdata = newdata, interval = "confidence")
+cbind(newdata, pred)
+```
+
+## Висновки
+
+1. Дані імпортовано з файлу **Варианты1-17.xls** за допомогою пакета `readxl`. Для варіанту 12 сформовано пару змінних \(X=\) `Col_13` та \(Y=\) `Col_38`.
+2. Побудовано дві моделі парної регресії (лінійну та квадратичну) та виконано їх порівняння за критерієм **AIC** і показником **Adjusted R²**.
+3. Обрано найкращу модель: **`r best_name`**. Для неї \(R^2 =\) **`r round(glance(best_model)$r.squared, 4)`**, \(Adj.\ R^2 =\) **`r round(glance(best_model)$adj.r.squared, 4)`**.
+4. Проведено діагностику залишків: тест Shapiro–Wilk дав p-value **`r signif(sh$p.value, 4)`**, а тест Breusch–Pagan — p-value **`r signif(bp$p.value, 4)`**. На рівні значущості 0.05 висновок робиться шляхом порівняння p-value з \(\alpha\).
+5. Остаточне рівняння регресії: **`r eq`**. На його основі виконано приклад прогнозування \(Y\) для заданих значень \(X\).
+
