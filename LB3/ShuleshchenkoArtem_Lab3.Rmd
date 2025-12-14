@@ -1,0 +1,190 @@
+---
+title: 'Математична статистика. Лабораторна робота №3: Основи вибіркового методу'
+author: "Шулещенко Артем Вадимович"
+output:
+  html_document:
+    toc: true
+    df_print: paged
+  html_notebook:
+    toc: true
+    toc_float: true
+    highlight: tango
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+set.seed(20251213)  # фіксуємо генератор (щоб результат був відтворюваний)
+```
+
+## Мета роботи
+
+Ознайомитися з вибірковим методом та отримати практичні навички: -
+генерації вибірок заданого розподілу; - обчислення вибіркових оцінок
+числових характеристик; - побудови основних графіків (гістограма,
+емпірична ФР, boxplot); - порівняння теоретичних і вибіркових
+характеристик для різних обсягів вибірки.
+
+## Постановка задачі
+
+Нехай випадкова величина $X$ має **нормальний розподіл** $$
+X \sim \mathcal{N}(a, \sigma^2),
+$$ де $a=5$, $\sigma=2$.
+
+1.  Згенерувати вибірки обсягів $n=100$ та $n=1000$.
+2.  Для кожної вибірки обчислити вибіркові оцінки:
+    -   $\tilde a = \overline{x}$ (вибіркове середнє),
+    -   $\tilde D = \frac{1}{n}\sum (x_i-\overline{x})^2$ (вибіркова
+        дисперсія),
+    -   $\tilde{\tilde D} = \frac{1}{n-1}\sum (x_i-\overline{x})^2$
+        (виправлена дисперсія),
+    -   відповідні СКВ, медіану, квартильний розмах, асиметрію та
+        ексцес.
+3.  Побудувати графіки вибіркових характеристик та порівняти з
+    теоретичним розподілом.
+4.  Зробити висновки.
+
+## Теоретичні характеристики
+
+```{r theo}
+a <- 5
+sigma <- 2
+
+theo_mean <- a
+theo_var  <- sigma^2
+theo_sd   <- sigma
+
+c(theoretical_mean = theo_mean,
+  theoretical_var = theo_var,
+  theoretical_sd = theo_sd)
+```
+
+## Генерація вибірок
+
+```{r gen}
+n1 <- 100
+n2 <- 1000
+
+X1 <- rnorm(n1, mean = a, sd = sigma)
+X2 <- rnorm(n2, mean = a, sd = sigma)
+```
+
+## Функції для характеристик
+
+```{r helpers}
+cmoment <- function(x, k) {
+  m <- mean(x)
+  mean((x - m)^k)
+}
+
+skewness_ex <- function(x) {
+  m3 <- cmoment(x, 3)
+  s  <- sd(x)
+  m3 / (s^3)
+}
+
+kurtosis_excess <- function(x) {
+  m4 <- cmoment(x, 4)
+  s  <- sd(x)
+  m4 / (s^4) - 3
+}
+
+stats_pack <- function(x) {
+  n <- length(x)
+  m <- mean(x)
+  v <- mean((x - m)^2)
+  v_unb <- var(x) # R: виправлена дисперсія (n-1)
+  data.frame(
+    n = n,
+    mean = m,
+    median = median(x),
+    var = v,
+    var_unbiased = v_unb,
+    sd = sqrt(v),
+    sd_unbiased = sqrt(v_unb),
+    IQR = IQR(x),
+    skewness = skewness_ex(x),
+    excess = kurtosis_excess(x)
+  )
+}
+```
+
+## Таблиця: теорія vs вибірка
+
+```{r table, results='asis'}
+tab <- rbind(
+  data.frame(
+    sample = "Теоретично",
+    n = NA,
+    mean = theo_mean,
+    median = NA,
+    var = theo_var,
+    var_unbiased = NA,
+    sd = theo_sd,
+    sd_unbiased = NA,
+    IQR = NA,
+    skewness = 0,
+    excess = 0
+  ),
+  cbind(sample = "Вибірка", stats_pack(X1)),
+  cbind(sample = "Вибірка", stats_pack(X2))
+)
+
+knitr::kable(tab, digits = 4, caption = "Порівняння теоретичних і вибіркових характеристик")
+```
+
+## Графіки для n = 100
+
+```{r plots100}
+par(mfrow = c(2,2))
+
+hist(X1, breaks = "Sturges", main = "Гістограма (n=100)", xlab = "x")
+boxplot(X1, horizontal = TRUE, main = "Boxplot (n=100)")
+
+plot(ecdf(X1), main = "Емпірична ФР (n=100)", xlab = "x", ylab = "F(x)")
+curve(pnorm(x, mean = a, sd = sigma), add = TRUE, lwd = 2)
+
+qqnorm(X1, main = "Q-Q plot (n=100)")
+qqline(X1, lwd = 2)
+
+par(mfrow = c(1,1))
+```
+
+## Графіки для n = 1000
+
+```{r plots1000}
+par(mfrow = c(2,2))
+
+hist(X2, breaks = "Sturges", main = "Гістограма (n=1000)", xlab = "x")
+boxplot(X2, horizontal = TRUE, main = "Boxplot (n=1000)")
+
+plot(ecdf(X2), main = "Емпірична ФР (n=1000)", xlab = "x", ylab = "F(x)")
+curve(pnorm(x, mean = a, sd = sigma), add = TRUE, lwd = 2)
+
+qqnorm(X2, main = "Q-Q plot (n=1000)")
+qqline(X2, lwd = 2)
+
+par(mfrow = c(1,1))
+```
+
+## Експорт вибірок
+
+```{r export}
+dir.create("data", showWarnings = FALSE)
+write.csv(data.frame(X = X1), file = "data/lab3_sample_n100.csv", row.names = FALSE)
+write.csv(data.frame(X = X2), file = "data/lab3_sample_n1000.csv", row.names = FALSE)
+```
+
+## Висновки
+
+1.  Згенеровано вибірки з нормального розподілу $\mathcal{N}(5, 2^2)$
+    для $n=100$ та $n=1000$.
+2.  Для більшого обсягу вибірки ($n=1000$) вибіркові оцінки
+    математичного сподівання та дисперсії ближчі до теоретичних значень,
+    а графіки (гістограма, емпірична ФР, Q–Q plot) краще узгоджуються з
+    теоретичною моделлю.
+3.  Зі зростанням $n$ зменшується випадкова похибка оцінювання числових
+    характеристик, що підтверджує практичну дію закону великих чисел для
+    вибіркових оцінок.
