@@ -1,0 +1,186 @@
+---
+title: 'Математична статистика. Лабораторна робота №4: Перевірка статистичних гіпотез
+  (нормальність)'
+author: "Шулещенко Артем Вадимович"
+output:
+  html_document:
+    toc: true
+    df_print: paged
+  html_notebook:
+    toc: true
+    toc_float: true
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+set.seed(20251213)  # відтворюваність результатів
+```
+
+## Мета роботи
+
+Набути навичок перевірки статистичних гіпотез щодо закону розподілу, зокрема:
+- сформувати вибірку заданого розподілу та оцінити параметри;
+- перевірити гіпотезу про нормальність (кілька критеріїв);
+- порівняти результати для різних обсягів вибірки.
+
+## Постановка задачі
+
+Нехай \(X\) — випадкова величина. Згенерувати вибірки:
+- \(n_1 = 50\)
+- \(n_2 = 1000\)
+
+Згідно з методичними вказівками, для прикладу використовуємо **нормальний розподіл**:
+\[
+X \sim \mathcal{N}(a, \sigma^2), \quad a=5,\ \sigma=2.
+\]
+
+1. Згенерувати вибірки та експортувати їх на диск (CSV).
+2. Оцінити параметри \(a\) та \(\sigma\).
+3. Висунути та перевірити гіпотезу про нормальність:
+
+\[
+H_0: f(x) \in \{ \mathcal{N}(\mu, \sigma^2) \},\quad
+H_1: f(x) \notin \{ \mathcal{N}(\mu, \sigma^2) \}.
+\]
+
+4. Повторити для \(n=1000\) та порівняти результати.
+
+## Пакети
+
+```{r packages}
+NeedPackages <- c("nortest")
+to_install <- NeedPackages[!NeedPackages %in% installed.packages()[, "Package"]]
+if (length(to_install) > 0) install.packages(to_install)
+
+library(nortest)
+```
+
+## Генерація вибірок та експорт
+
+```{r gen-export}
+a <- 5
+sigma <- 2
+
+n1 <- 50
+n2 <- 1000
+
+X1 <- rnorm(n1, mean = a, sd = sigma)
+X2 <- rnorm(n2, mean = a, sd = sigma)
+
+dir.create("data", showWarnings = FALSE)
+write.csv(data.frame(X = X1), "data/lab4_sample_n50.csv", row.names = FALSE)
+write.csv(data.frame(X = X2), "data/lab4_sample_n1000.csv", row.names = FALSE)
+
+# імпорт (перевірка)
+X1_in <- read.csv("data/lab4_sample_n50.csv")$X
+X2_in <- read.csv("data/lab4_sample_n1000.csv")$X
+
+c(length(X1_in), length(X2_in))
+```
+
+## Оцінювання параметрів
+
+Оцінки параметрів нормального розподілу:
+- \(\hat{\mu} = \overline{x}\)
+- \(\hat{\sigma} = s\) (вибіркове СКВ)
+
+```{r est}
+est_params <- function(x) {
+  c(mu_hat = mean(x),
+    sigma_hat = sd(x))  # sd() в R — з виправленням (n-1)
+}
+
+p1 <- est_params(X1_in)
+p2 <- est_params(X2_in)
+
+p1
+p2
+```
+
+## Графічний аналіз
+
+```{r plots}
+par(mfrow = c(2, 2))
+
+# n=50
+hist(X1_in, breaks = "Sturges", main = "Гістограма (n=50)", xlab = "x")
+curve(dnorm(x, mean = p1["mu_hat"], sd = p1["sigma_hat"]), add = TRUE, lwd = 2)
+
+qqnorm(X1_in, main = "Q-Q plot (n=50)")
+qqline(X1_in, lwd = 2)
+
+# n=1000
+hist(X2_in, breaks = "Sturges", main = "Гістограма (n=1000)", xlab = "x")
+curve(dnorm(x, mean = p2["mu_hat"], sd = p2["sigma_hat"]), add = TRUE, lwd = 2)
+
+qqnorm(X2_in, main = "Q-Q plot (n=1000)")
+qqline(X2_in, lwd = 2)
+
+par(mfrow = c(1, 1))
+```
+
+## Перевірка гіпотези про нормальність
+
+Використаємо кілька поширених критеріїв:
+- Shapiro–Wilk (`shapiro.test`)  
+- Lilliefors (модифікація Колмогорова–Смірнова для невідомих параметрів) — `nortest::lillie.test`  
+- Anderson–Darling — `nortest::ad.test`
+
+Рівень значущості: \(\alpha=0.05\). Якщо **p-value < 0.05**, то \(H_0\) відхиляємо.
+
+```{r tests}
+alpha <- 0.05
+
+norm_tests <- function(x) {
+  data.frame(
+    test = c("Shapiro-Wilk", "Lilliefors", "Anderson-Darling"),
+    p_value = c(
+      shapiro.test(x)$p.value,
+      lillie.test(x)$p.value,
+      ad.test(x)$p.value
+    )
+  )
+}
+
+t1 <- norm_tests(X1_in)
+t2 <- norm_tests(X2_in)
+
+t1
+t2
+```
+
+### Інтерпретація результатів
+
+```{r interpret, results='asis'}
+interpret <- function(tab, alpha = 0.05) {
+  tab$decision <- ifelse(tab$p_value < alpha, "Відхилити H0", "Не відхиляти H0")
+  tab
+}
+
+knitr::kable(interpret(t1, alpha), digits = 6, caption = "Результати тестів нормальності (n=50)")
+knitr::kable(interpret(t2, alpha), digits = 6, caption = "Результати тестів нормальності (n=1000)")
+```
+
+## Порівняння оцінок параметрів
+
+```{r compare, results='asis'}
+theo <- data.frame(
+  sample = "Теоретично",
+  n = NA,
+  mu = a,
+  sigma = sigma
+)
+
+est1 <- data.frame(sample = "Вибірка", n = n1, mu = p1["mu_hat"], sigma = p1["sigma_hat"])
+est2 <- data.frame(sample = "Вибірка", n = n2, mu = p2["mu_hat"], sigma = p2["sigma_hat"])
+
+knitr::kable(rbind(theo, est1, est2), digits = 4, caption = "Теоретичні та оцінені параметри")
+```
+
+## Висновки
+
+1. Згенеровано вибірки нормального розподілу \( \mathcal{N}(5, 2^2) \) обсягів \(n=50\) та \(n=1000\), виконано експорт та імпорт даних у форматі CSV.
+2. Оцінки параметрів \(\hat{\mu}\) та \(\hat{\sigma}\) для \(n=1000\) є ближчими до теоретичних значень, ніж для \(n=50\), що пояснюється зменшенням випадкової похибки при зростанні обсягу вибірки.
+3. За результатами критеріїв Shapiro–Wilk, Lilliefors та Anderson–Darling на рівні значущості \(\alpha=0.05\) гіпотеза нормальності \(H_0\) для згенерованих даних, як правило, **не відхиляється**, що узгоджується з тим, що вибірки сформовано з нормального розподілу.
+4. Графічний аналіз (гістограми з накладеною щільністю та Q–Q графіки) підтверджує узгодженість емпіричних даних з нормальною моделлю, причому при \(n=1000\) узгодженість виражена чіткіше.
